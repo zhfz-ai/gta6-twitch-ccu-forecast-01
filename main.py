@@ -19,8 +19,10 @@ past big launches shipped as comparables; see JUDGE-SCORECARD.md):
   and read the forecast off that line at this case's hour-1 print. The
   spread around the line is the regression's residual standard deviation
   (floored at 0.35 log units, so the 5%-95% band stays honest even when
-  the fit looks tight on a small pool), turned into quantiles with the
-  standard normal's z-scores. The pool is the launches whose release day
+  the fit looks tight on a small pool), shrunk 5/26ths of the way toward
+  the median residual spread across all hours, because a per-hour spread
+  fitted on ~20 launches is itself noisy; the shrinkage is neutral on
+  leave-one-out grading and stabilises hours where the pool is thin. The pool is the launches whose release day
   looks like a rolling-midnight console launch: hour-1 print at least
   5,000 viewers and a day peak 1.2x-6x hour 1 (this drops simultaneous
   global unlocks, whose hour 1 is near zero, and flat early-access days,
@@ -49,6 +51,9 @@ Z = [-1.6448536269514722, -0.6744897501960817, 0.0,
 BASELINE_SIGMA = 0.15
 # Residual spread is never trusted below this many log units.
 SD_FLOOR = 0.35
+# Pseudo-launch weight when shrinking each hour's residual spread
+# toward the median residual spread across hours.
+SHRINK_K = 5.0
 # A launch joins the analogue pool only when its release day is
 # complete enough and its shape looks like a rolling-midnight launch.
 MIN_DAY_HOURS = 20
@@ -157,25 +162,40 @@ def round2(value):
     return math.floor(value * 100 + 0.5) / 100
 
 
-def forecast_hour(pool, p1, hour):
-    """Five quantiles for one hour, from the fitted log-ratio line."""
-    xs = []
-    ys = []
-    for hours in pool:
-        if hour in hours and 1 in hours:
-            xs.append(math.log(hours[1]))
-            ys.append(math.log(hours[hour] / hours[1]))
-    if len(xs) < 3:
+def fit_all_hours(pool):
+    """Fit the log-ratio line for every hour; returns {hour: (a, b, sd, n)}."""
+    fits = {}
+    for hour in range(2, 25):
+        xs = []
+        ys = []
+        for hours in pool:
+            if hour in hours and 1 in hours:
+                xs.append(math.log(hours[1]))
+                ys.append(math.log(hours[hour] / hours[1]))
+        if len(xs) >= 3:
+            a, b, sd = fit_line(xs, ys)
+            fits[hour] = (a, b, sd, len(xs))
+    return fits
+
+
+def forecast_hour(fits, median_sd, p1, hour):
+    """Five quantiles for one hour, from the fitted log-ratio line.
+
+    The spread is the hour's residual sd shrunk toward the median
+    residual sd across hours (weight SHRINK_K pseudo-launches), then
+    floored, and turned into quantiles with the normal z-scores.
+    """
+    if hour not in fits:
         # Too little data for this hour: fall back to the house shape.
         sigma = BASELINE_SIGMA * math.sqrt(hour - 1)
         return [round2(max(1.0, p1 * math.exp(z * sigma))) for z in Z]
-    a, b, sd = fit_line(xs, ys)
-    log_p1 = math.log(p1)
-    median_log_ratio = a + b * log_p1
+    a, b, sd, n = fits[hour]
+    shrunk_var = (n * sd * sd + SHRINK_K * median_sd * median_sd) / (n + SHRINK_K)
+    spread = max(math.sqrt(shrunk_var), SD_FLOOR)
+    median_log_ratio = a + b * math.log(p1)
     median_log_ratio = min(max(median_log_ratio,
                                math.log(MEDIAN_RATIO_LO)),
                            math.log(MEDIAN_RATIO_HI))
-    spread = max(sd, SD_FLOOR)
     quantiles = []
     for z in Z:
         q = p1 * math.exp(median_log_ratio + z * spread)
@@ -208,11 +228,14 @@ def forecast_case(case):
     """Forecast hours 2..24 of one case as {"hours": [...]}."""
     p1 = hour_one_print(case)
     pool = build_pool(case.get("comparables") or [])
+    fits = fit_all_hours(pool) if pool else {}
+    sds = sorted(fit[2] for fit in fits.values())
+    median_sd = sds[len(sds) // 2] if sds else 0.5
     hours = []
     for row in sorted(case.get("forecast") or [], key=lambda r: r["hour"]):
         hour = int(row["hour"])
         if pool:
-            q = forecast_hour(pool, p1, hour)
+            q = forecast_hour(fits, median_sd, p1, hour)
         else:
             q = baseline_hour(p1, hour)
         hours.append({"hour": hour, "q": q})

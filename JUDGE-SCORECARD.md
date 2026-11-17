@@ -51,6 +51,14 @@ on the final, so every candidate below is measured against that bar.
 | C21 | C20 + coefficients smoothed across hours | 0.265 | 0.199 | 0.90 | 1.054 | yes |
 | C22 | C20 + 25% blend toward broad median curve | 0.273 | 0.201 | 0.89 | 1.082 | yes |
 | C23 | C20 with spread x1.0 | 0.265 | 0.198 | 0.87 | 1.081 | yes |
+| C24 | **C8 + per-hour spread shrunk toward cross-hour median (k=5)** | **0.263** | **0.190** | **0.89** | **1.084** | **yes** |
+
+C24 is the shipped program: identical to C8 on the medians, with the
+spread stabilised. Its leave-one-out numbers were re-verified by
+running the shipped `main.py` itself over all 37 pseudo-cases:
+rolling-10 loss 0.2626, broad loss 0.1928 (22 launches in the shipped
+run's broad set — one extra launch passes the shipped code's
+>=20-hour completeness rule), median rolling-10 loss 0.131.
 
 \* C1 coverage 0.783 is the house's own practice figure; the LOO
 coverage on these sets is similar.

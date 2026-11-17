@@ -17,7 +17,8 @@ small hour-1 launches climb several-fold by the US evening. Spread is
 the regression's residual standard deviation (floored at 0.35 log
 units). Leave-one-out on the 37 comparables: mean pinball loss 0.19 on
 broad analogues and 0.26 on rolling-midnight launches, vs 0.29 / 0.37
-for the house baseline. See JUDGE-SCORECARD.md for all 20+ candidates.
+for the house baseline. Spread is shrunk toward the cross-hour median
+(k=5 pseudo-launches) for stability. See JUDGE-SCORECARD.md for all 20+ candidates.
 
 ## Run it
 
